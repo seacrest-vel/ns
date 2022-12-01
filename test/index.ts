@@ -1,5 +1,12 @@
-import { readFileSync } from "fs"
-import { join } from "path"
-import { Component } from "../src/component"
+import { html2json, Node } from "html2json";
+import { NodeStruct } from "../src/ee";
+import { ElementStruct } from "../src/types";
 
-const component = new Component(`<component name="foo" bar="baz"> {} </component>`, {name: "foo", bar: "baz", key: "val"})
+const node: ElementStruct = {type: "text", tag: "div", text: "text", attributes: {"class": "div", id: "elt"}, children: [{text: "element text"}]}
+
+const markup = NodeStruct.create(node)
+const list = NodeStruct.create({children: [node, node]})
+const node2 = html2json(markup)
+
+
+// console.log(list);

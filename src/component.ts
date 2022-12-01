@@ -1,19 +1,16 @@
 import { html2json, json2html, Node } from "html2json";
-import { NodeResolver } from "./ee";
 import { baseName } from "./config.json";
 import { Attributes, Props, Values } from "./types";
 
-export class Component<P = Props> extends NodeResolver {
+export class Component<P = Props> {
   public name: string;
   public node: Node;
   private children: Node[] = [];
   private values: Values = {};
 
   constructor(private markup: string, private props: P & Props) {
-    super();
     this.name = props.name;
     this.parseElements(markup);
-  
 
     this.node = html2json(this.markup);
 
