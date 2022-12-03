@@ -1,12 +1,6 @@
-import { html2json, Node } from "html2json";
-import { NodeStruct } from "../src/ee";
-import { ElementStruct } from "../src/types";
+import { NodeStruct } from "../src/node-struct";
 
-const node: ElementStruct = {type: "text", tag: "div", text: "text", attributes: {"class": "div", id: "elt"}, children: [{text: "element text"}]}
+const ns = new NodeStruct()
+const style = ns.createStyles("-c_x000-", "inline")
 
-const markup = NodeStruct.create(node)
-const list = NodeStruct.create({children: [node, node]})
-const node2 = html2json(markup)
-
-
-// console.log(list);
+console.log(style);
