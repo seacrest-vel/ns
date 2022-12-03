@@ -126,7 +126,7 @@ export class NodeStruct {
     }
   }
 
-  createStyles(signature: string, as: "inline" | "css"): string {
+  createStyles(styles: "inline" | "css", ...signature: string[]): string {
     const splitSignature = (signature: string, delimeter: string = ""): [string, string] => {
       if (delimeter) {
         return <[string, string]>signature.split(delimeter);
@@ -137,7 +137,7 @@ export class NodeStruct {
     }
 
     const getStyleFromEntry = ([property, value]: [string, string]) => {
-      const match = /(\D+\d+|\D+_\D+)/g.test(signature);
+      const match = /(\D+\d+|\D+_\D+)/g.test(signature.join());
       if (!match) return "";
       
       if (!(property in NodeStruct.styles)) return "";
@@ -146,30 +146,49 @@ export class NodeStruct {
         value = value.replace("x", "#");
       }
       return `${prop}: ${value}${measures || ""};` ;
-    }    
+    }
     
-    if (!signature.includes("-")) {
-      return getStyleFromEntry(signature.includes("_") ? splitSignature(signature, "_") : splitSignature(signature));
+    switch (styles) {
+      case "inline": {
+        if (!signature.includes("-")) {
+          return getStyleFromEntry(signature.includes("_") ? splitSignature(signature.join(), "_") : splitSignature(signature.join()));
+    
+        } else {
+          return signature
+            .join()
+            .split("-")
+            .filter(style => style)
+            .map(style => getStyleFromEntry(style.includes("_") ? splitSignature(style, "_") : splitSignature(style)))
+            .join();
+        }
+      }
+      case "css": {
+        return signature.map(cls => {
+          let css = `.${cls}{${this.createStyles("inline", cls)}}`;
 
-    } else {
-      return signature
-        .split("-")
-        .filter(style => style)
-        .map(style => getStyleFromEntry(style.includes("_") ? splitSignature(style, "_") : splitSignature(style)))
-        .reduce((prev, curr) => prev + curr);
+          if (cls.includes("mob")) {
+            css = `@media(max-width: 767px){${css}}` ;
+          }
+
+          if (cls.includes("dsk") || cls.includes("desk")) {
+            css = `@media(min-width: 768px){${css}}` ;
+          }
+
+          return css;
+        }).join();
+      }
     }
   }
 
   generateCSS(...classes: string[]): string {
     let css = "";
     classes.forEach(cls => {
-
       if (!cls.includes("-")) {
         let prop = cls.replace(/\D+/, "");
         if (!(prop in NodeStruct.styles)) return "";
       };
 
-      css += `.${cls}{${this.createStyles(cls, "inline")}}`;
+      css += `.${cls}{${this.createStyles("inline", cls)}}`;
 
       if (cls.includes("mob")) {
         css = `@media(max-width: 767px){${css}}` ;
