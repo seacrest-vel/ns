@@ -4,18 +4,19 @@ type NS = {
   type?: "element" | "text";
   text?: string;
   tag?: string;
-  attributes?: { [key: string]: string };
+  attributes?: { [key: string]: string[] };
   children?: NS[];
+  name?: string;
 }
 
 export class NodeStruct {
-  type?: "element" | "text";
-  text?: string;
-  tag?: string;
-  attributes?: { [key: string]: string };
-  children?: NodeStruct[];
-  markup?: string;
-
+  public type?: "element" | "text";
+  public text?: string;
+  public tag?: string;
+  public attributes?: { [key: string]: string[] };
+  public children?: NodeStruct[];
+  
+  
   static styles: {[key: string]: string[]} = {
     fs: [ "font-size", "px" ],
     fw: [ "font-weight" ],
@@ -23,111 +24,130 @@ export class NodeStruct {
     cl: ["color"],
     h: [ "height", "px" ],
     w: [ "width", "px" ],
+    ff: [ "font-family" ]
   };
-
-  static struct?: NS
+  
+  
+  static initialNS: NS = {type: undefined, tag: undefined, attributes: undefined, children: undefined, text: undefined, name: undefined};
+  static configuredNS: {[key: string]: NS} = { default: this.initialNS };
+  public nodes: {[key: string]: NS} = {default: NodeStruct.initialNS};
+  public node: NS = NodeStruct.initialNS;
   
   constructor(public ns?: NS) {
-    NodeStruct.struct = ns;
+    NodeStruct.config(ns);
+
+    ns?.name ? this.nodes[ns.name] = NodeStruct.configuredNS[ns.name] : this.node = NodeStruct.configuredNS["default"];
+
   }
 
-  static swap (value: string | Node): string | Node {
+  static config(nodeStruct: NS = NodeStruct.initialNS): void {
+    const config = {...NodeStruct.initialNS, ...nodeStruct};
+    this.configuredNS["default"] = {...config};
+    if (config.name) {
+      this.configuredNS[config.name] = {...config};
+    }
+  }
+
+  static add(name?: string): NS {
+    return NodeStruct.configuredNS[name || "default"];
+  }
+
+
+  static swap(value: string | Node): string | Node {
     return typeof value === "string" ? html2json(value) : json2html(value as Node);
   }
 
-  static convert(ns: NS)  {
-    return html2json(NodeStruct.createMarkup(ns));
+  static swapJSON(ns: NS): Node {
+    return html2json(NodeStruct.convert(ns));
   }
 
-  static revertList(...node: Node[]): NS[] {
-    return node.map(node => NodeStruct.revert(node));
-  }
-
-  static revert (value: string | Node): NS {
-    const {node, attr, child, tag, text}: Node = typeof value === "string" ? html2json(value) : value;
+  static revert (value: string | Node, trim: boolean = false): NS {
+    let n: Node = typeof value === "string" ? html2json(value) : value;
+    const {node, attr, child, tag, text} = n;
 
     switch (node) {
       case "root": {
-        if (!child || (child as Node[]).length !== 1) {
-          return {} as NS;
-        } else {
-          return { ...(child as Node[])[0] } as unknown as NS;
-        }
+        if (!child) return {type: "text", text: ""} as NS;
+        if (child && !(child instanceof Array)) return this.revert(child, trim)
+        if (child instanceof Array && child.length === 1) return this.revert(child[0], trim)
+
+        return { children: [...child.map(c => this.revert(c, trim))] };
       } 
 
       case "element": {
         return {
           tag,
           type: (tag ? "element" : "text"),
-          attributes: attr && Object.fromEntries(Object.entries(attr).map(([key, val]) => [key, (typeof val === "string" ? val : val.join(" "))])),
-          children: this.revertList(...(child as Node[]))
-        } as NodeStruct;
+          text: !Array.isArray(child) ? child : "",
+          attributes: attr ? Object.fromEntries(Object.entries(attr).map(([key, val]) => [ key, [...(val && typeof val === "string" ? [val] : [...val])] ] )) : undefined,
+          children: child && Array.isArray(child) ? (child as Node[]).map(node => NodeStruct.revert(node, trim)) : child ? NodeStruct.revert(child, trim) : child
+        } as NS;
       }
 
       case "text": {
-        return { type: "text", text } as NS
+        return { type: "text", text: trim && text ? text.replace(/\r/g, "").replace(/\n/g, "") : text } as NS
       }
-      default: return {} as NS;
+      default: return {text: ""} as NS;
     }
   }
- 
-  static ejectEntry(node: Node | undefined): [ Node | undefined, Node[] | undefined] {
-    if (node?.node === "root") {
-      if (!node.child) return [ undefined, undefined ];
-      if (!(node.child instanceof Array) && node.child) return [ node.child, undefined ];
-      if ((node.child as Node[]).length === 1) {
-        return [(node.child as Node[])[0], undefined]
-      } else {
-        const list = node.child.map<Node | undefined>((node) => {
-          const [first] = this.ejectEntry(node);
-          return first;
-        });
-        return [undefined, list as Node[] ]
-      }
-    }
-    return [undefined, undefined]
-  }
 
-  static eject(node: Node | undefined): {node: Node | undefined, list: Node[] | undefined} {
-    const [elt, ls] = this.ejectEntry(node);
-    return { node: elt, list: ls };
-  }
 
-  static define(ns: NS) {
-    console.log(ns);
+  static convert({tag, text, children, type, attributes}: NS, trim: boolean = false): string {
     
-    const results: {isNodeStruct?: boolean} = {};
-    const node = new NodeStruct(ns);
-    if (NodeStruct.struct && node.ns) {
-      const NS = Object.values(NodeStruct.struct)
-      results.isNodeStruct = Object.values(node.ns).filter((value, i) => typeof value === typeof NS[i]).length === NS.length;
-      return results;
+    const handleSpaces = (text?: string): string => {
+      if (text && trim) {
+        const startContentSpaces = text.startsWith(" ") && text.length > 1 && !text.includes(new RegExp(`\s{${text.length}}`, 'g').exec(text) ? new RegExp(`\s{${text.length}}`, 'g').exec(text)![0] : "  ");
+        const endContentSpaces = text.endsWith(" ") && text.length > 1 && !text.includes(/\s+/g.exec(text) ? /\s+/g.exec(text)![0] : "  ");
+        text = text.trim();
+
+        if (startContentSpaces) {
+          text = " " + text;
+        }
+        if (endContentSpaces) {
+          text += " ";
+        }
+  
+        return text;
+      }
+
+      return text || "";
     }
-    results.isNodeStruct = false;
-    return results;
-  }
-
-
-  static createMarkup({tag, text, children, type, attributes}: NS): string {
+    
+    
     if (!tag && children) {
-      return children.map<string>(node => NodeStruct.createMarkup(node)).join("");
+      const c = children.map<string>(node => NodeStruct.convert(node, trim));
+
+      text = handleSpaces(text);
+      
+      return !!c.length ? c.join("") : text || "";
     }
+
     children = [...(children || [])];
     type = tag ? "element" : "text";
     if (type === "text") {
+      text = handleSpaces(text);
+      
       return text || "";
     } else {
-      const attrs = attributes ? Object.entries(attributes).map(([k, v]) => ` ${k}="${v}"`).join('') : "";
-      if (tag === "img" || tag === "input") {
-        return `<${tag}${attrs}/>`;
-      }
-      
-      return `<${tag}${attrs}>${children.map(elt => NodeStruct.createMarkup(elt)).join("") || text || ""}</${tag}>`
+        const attrs = attributes ? Object.entries(attributes)
+          .map(([k, v]) =>  " " + k + (NodeStruct.isAttrValue(v) ? (v.length === 1 ? `="${v[0]}"` : `="${v.join(" ")}"`) : ""))
+          .join("") : "";
+        if (tag === "img" || tag === "input") {
+          return `<${tag}${attrs}/>`;
+        }
+        const c = children.map(elt => NodeStruct.convert(elt, trim));
+
+        text = handleSpaces(text);
+        
+        return `<${tag}${attrs}>${ !!c.length ? c.join("") : text || ""}</${tag}>`;
     }
   }
 
-  createStyles(styles: "inline" | "css", ...signature: string[]): string {
+
+
+  protected createStyles(styles: "inline" | "css", ...signature: string[]): string {
     const splitSignature = (signature: string, delimeter: string = ""): [string, string] => {
+      
       if (delimeter) {
         return <[string, string]>signature.split(delimeter);
       }
@@ -137,7 +157,7 @@ export class NodeStruct {
     }
 
     const getStyleFromEntry = ([property, value]: [string, string]) => {
-      const match = /(\D+\d+|\D+_\D+)/g.test(signature.join());
+      const match = /(\D+\d+|\D+_\D+)/g.test(signature.join("-"));
       if (!match) return "";
       
       if (!(property in NodeStruct.styles)) return "";
@@ -145,21 +165,24 @@ export class NodeStruct {
       if (prop === "color" && value.at(0) === "x") {
         value = value.replace("x", "#");
       }
+      if (prop === "font-family") {
+        value = `"${value}" sans-serif`;
+      }
       return `${prop}: ${value}${measures || ""};` ;
     }
     
     switch (styles) {
       case "inline": {
-        if (!signature.includes("-")) {
-          return getStyleFromEntry(signature.includes("_") ? splitSignature(signature.join(), "_") : splitSignature(signature.join()));
+        if (signature.length === 1 && !signature[0].includes("-")) {
+          return getStyleFromEntry(signature[0].includes("_") ? splitSignature(signature[0], "_") : splitSignature(signature[0]));
     
         } else {
           return signature
-            .join()
+            .join("-")
             .split("-")
-            .filter(style => style)
+            .filter(isEmtyString => isEmtyString)
             .map(style => getStyleFromEntry(style.includes("_") ? splitSignature(style, "_") : splitSignature(style)))
-            .join();
+            .join("");
         }
       }
       case "css": {
@@ -175,53 +198,35 @@ export class NodeStruct {
           }
 
           return css;
-        }).join();
+        }).join("");
       }
     }
   }
 
-  generateCSS(...classes: string[]): string {
-    let css = "";
-    classes.forEach(cls => {
-      if (!cls.includes("-")) {
-        let prop = cls.replace(/\D+/, "");
-        if (!(prop in NodeStruct.styles)) return "";
-      };
-
-      css += `.${cls}{${this.createStyles("inline", cls)}}`;
-
-      if (cls.includes("mob")) {
-        css = `@media(max-width: 767px){${css}}` ;
-      }
-
-      if (cls.includes("dsk") || cls.includes("desk")) {
-        css = `@media(min-width: 768px){${css}}` ;
-      }
-    });
-
-    return css;
+  static fix(ns:NS) {
+    return NodeStruct.revert(NodeStruct.convert(ns, true));
   }
 
+  static isAttrValue(attr: string[] | undefined): boolean {
+    if (attr) {
+      return !!attr.length && !!attr[0];
+    }
+    return false;
+  }
+
+  matchTimes(substr: string, str: string, del?: string): number {
+    const len = substr.length;
+    const list = [];
   
-}
-
-function countStr(substr: string, str: string, del?: string): number {
-  const len = substr.length;
-  const list = [];
-
-  const s = str.replace(new RegExp(substr, 'g'), "");
-  for(let i = len; i <= str.length - s.length; i+=len) {
-    list.push(i)
+    const s = str.replace(new RegExp(substr, 'g'), "");
+    for(let i = len; i <= str.length - s.length; i+=len) {
+      list.push(i)
+    }
+  
+    return list.length;
   }
-
-  return list.length;
-}
-
-function raw(markup: string) {
   
 }
 
 
-export type {
-  NS
-}
+export type { NS, Node }
